@@ -2,6 +2,9 @@
 Main module with limit order book implementation
 """
 
+import heapq
+
+
 class Order:
     """
     Base order class
@@ -10,37 +13,88 @@ class Order:
 
     def __init__(self, order_id: str, side: str, price: float, quantity: int):
         self.order_id = order_id
-        self.side = side  # 'buy' or 'sell'
+        self.side = side.lower()  # 'buy' or 'sell'
         self.price = price
         self.quantity = quantity
 
+    def __str__(self):
+        return f'{self.order_id} {self.side} {self.price} {self.quantity}'
+
+    def __repr__(self):
+        return f'{self.order_id}_{self.side}_{self.price}_{self.quantity}'
+
+    def __lt__(self, other):
+        """
+        """
+        if self.side == 'buy':
+            # higher price first in a buy-heap
+            return self.price > other.price
+        # lower price first in a sell-heap
+        return self.price < other.price
 
 class OrderBook:
     """
     Base order book class
     """
-    __slots__ = ('active_orders', 'filled_orders')
+    __slots__ = (
+        'active_orders','heap_buy_orders', 'heap_sell_orders', 'filled_orders'
+    )
 
     def __init__(self):
-        self.active_orders = {}  # {'AAA': Order, 'BBB': Order, ...}
+        self.active_orders = {}  # {'AAA': Order, 'BBB': Order ...}
 
         self.filled_orders = set()  # {'AAA', 'BBB', ...}
+
+        self.heap_buy_orders = []  # max-heap of buy orders
+        self.heap_sell_orders = []  # min-heap of sell orders
 
     def place_order(
         self, order_id: str, side: str, price: float, quantity: int
     ) -> str:
-        side = side.lower()
+        """
+        Place an order
+
+        :param order_id:
+        :param side:
+        :param price:
+        :param quantity:
+        :return:
+        """
+        if not all([order_id, side, price, quantity]):
+            raise ValueError(
+                'Invalid parameters: order_id, side, price and quantity '
+                'are required'
+            )
+
         order = Order(order_id, side, price, quantity)
 
-        full_match, match_items = self._process_order(order)
-        if not full_match:
-            self.active_orders[order_id] = order
+        if order.side == 'buy':
+            current_heap = self.heap_buy_orders
+            match_items = self._process_order(
+                order=order,  # buy order
+                opposite_orders=self.heap_sell_orders,
+                condition=lambda buy_price, sell_price: buy_price >= sell_price
+            )
+        elif order.side == 'sell':
+            current_heap = self.heap_sell_orders
+            match_items = self._process_order(
+                order=order,  # sell order
+                opposite_orders=self.heap_buy_orders,
+                condition=lambda sell_price, buy_price: sell_price <= buy_price
+            )
+        else:
+            raise ValueError(f'ValueError – no such side: {side}')
+
+        if order.quantity:
+            self.active_orders[order.order_id] = order
+            heapq.heappush(current_heap, order)
 
         if not match_items:
             return 'OK'
 
-        match_type = 'Fully' if full_match else 'Partially'
+        match_type = 'Partially' if order.quantity else 'Fully'
         match_items_str = ' and '.join(match_items)
+
         return f'{match_type} matched with {match_items_str}'
 
     def cancel_order(self, order_id: str):
@@ -56,45 +110,40 @@ class OrderBook:
         del self.active_orders[order_id]
         return 'OK'
 
-    # TODO: simplify and optimize
-    def _process_order(self, new_order):
-        new_price = new_order.price
-        if new_order.side == 'buy':
-            search_order_side = 'sell'
-            condition = lambda price_1, price_2: price_1 >= price_2
-        elif new_order.side == 'sell':
-            search_order_side = 'buy'
-            condition = lambda price_1, price_2: price_2 >= price_1
-        else:
-            raise ValueError('ValueError – no such side')
+    def _process_order(self, order, opposite_orders, condition):
+        """
 
+        :param order:
+        :param opposite_orders:
+        :param condition:
+        :return:
+        """
         matched_orders = []
-        full_match = False
 
-        # TODO: replace loop with something more efficient
-        for order_id, order in self.active_orders.items():
-            if order.side != search_order_side:
+        while opposite_orders and order.quantity:
+            # get the best order of the opposite side
+            opposite_order = heapq.heappop(opposite_orders)
+
+            if opposite_order.order_id not in self.active_orders:
                 continue
 
-            if not condition(new_price, order.price):
-                continue
+            # opposite order price ...
+            if not condition(order.price, opposite_order.price):
+                heapq.heappush(opposite_orders, opposite_order)
+                break
 
-            matched_quantity = min(new_order.quantity, order.quantity)
-            matched_orders.append(f'{order.order_id} ({matched_quantity} @ {order.price})')
+            matched_quantity = min(order.quantity, opposite_order.quantity)
+            matched_orders.append(f'{opposite_order.order_id} ({matched_quantity} @ {opposite_order.price})')
 
-            new_order.quantity -= matched_quantity
             order.quantity -= matched_quantity
+            opposite_order.quantity -= matched_quantity
 
-            if new_order.quantity <= order.quantity:
-                full_match = True
+            if opposite_order.quantity:
+                heapq.heappush(opposite_orders, opposite_order)
             else:
-                self.filled_orders.add(order.order_id)
+                self.filled_orders.add(opposite_order.order_id)
 
-        for order_id in self.filled_orders:
-            if order_id in self.active_orders:
-                del self.active_orders[order_id]
-
-        return full_match, matched_orders
+        return matched_orders
 
 
 book1 = OrderBook()
