@@ -11,8 +11,10 @@ class Order:
 
 
 class OrderBook:
-    orders = {}
-    filled_orders = set()
+
+    def __init__(self):
+        self.orders = {}
+        self.filled_orders = set()
 
     def place_order(self, id, side, price, quantity):
         side = side.lower()
@@ -27,7 +29,7 @@ class OrderBook:
             return 'OK'
 
         match_type = 'Fully' if full_match else 'Partially'
-        match_items_str = ' and'.join(match_items)
+        match_items_str = ' and '.join(match_items)
         return f'{match_type} matched with {match_items_str}'
 
     def cancel_order(self, id):
@@ -40,6 +42,7 @@ class OrderBook:
         del self.orders[id]
         return 'OK'
 
+    # TODO: simplify and optimize
     def _calc_match(self, new_order):
         new_price = new_order.price
         if new_order.side == 'buy':
@@ -53,6 +56,8 @@ class OrderBook:
 
         matched_items = []
         full_match = False
+
+        # TODO: replace loop with something more efficient
         for order_id, order in self.orders.items():
             if order.side != search_order_side:
                 continue
@@ -70,12 +75,17 @@ class OrderBook:
                 full_match = True
             else:
                 quantity = order.quantity
+                order.quantity -= new_order.quantity
                 self.filled_orders.add(order.id)
                 full_match = True
 
             matched_items.append(
                 f'{order.id} ({quantity} @ {order.price})'
             )
+
+        for order_id in self.filled_orders:
+            if order_id in self.orders:
+                del self.orders[order_id]
 
         return full_match, matched_items
 
@@ -90,7 +100,7 @@ print(book1.place_order('EEE', 'Sell', 12, 2))  # Fully matched with BBB (2 @ 12
 print(book1.place_order('FFF', 'Sell', 12, 4))  # Fully matched with BBB (4 @ 12)
 print(book1.place_order('GGG', 'Sell', 12, 10))  # Partially matched with BBB (6 @ 12)
 print(book1.cancel_order('BBB'))  # Failed - already fully filled
-print(book1.place_order('HHH', 'Buy', 14, 12))  # Fully matched with GGG (4 @ 12)
-print(book1.place_order('KKK', 'Sell', 20, 10))  # Fully matched with HHH (10 @ 12) and AAA (10 @ 10)
+print(book1.place_order('HHH', 'Buy', 12, 14))  # Fully matched with GGG (4 @ 12)
+print(book1.place_order('KKK', 'Sell', 10, 20))  # Fully matched with HHH (10 @ 12) and AAA (10 @ 10)
 print(book1.cancel_order('DDD'))  # ok
 print(book1.cancel_order('DDD'))  # Failed – no such active order
