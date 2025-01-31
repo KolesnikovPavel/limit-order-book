@@ -184,10 +184,12 @@ class OrderBook:
             opposite_order.quantity -= matched_quantity
 
             # if partially filled, add back into the heap
+            # else more order to filled orders and remove from active orders
             if opposite_order.quantity:
                 heapq.heappush(opposite_orders, opposite_order)
             else:
                 self.filled_orders[opposite_order.order_id] = opposite_order
+                del self.active_orders[opposite_order.order_id]
 
         # if not fully matched, add to active orders and push it into the heap,
         # else add it to filled orders

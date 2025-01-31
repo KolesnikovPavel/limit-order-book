@@ -112,6 +112,9 @@ def test_invalid_orders(test_order_book):
         test_order_book.place_order('B1', 'Buy', 50, 5)
         test_order_book.place_order('B1', 'Sell', 50, 5)
 
+    with pytest.raises(ValueError, match='Invalid side: Test. Must be "buy" or "sell"'):
+        test_order_book.place_order('X1', 'Test', 100, 10)
+
 
 def test_extreme_price_variations(test_order_book):
     """
@@ -120,3 +123,39 @@ def test_extreme_price_variations(test_order_book):
     assert test_order_book.place_order('X1', 'Buy', 0.01, 10) == 'OK'
     assert test_order_book.place_order('X2', 'Sell', 1000000, 1) == 'OK'
     assert test_order_book.place_order('X3', 'Sell', 0.01, 5) == 'Fully matched with X1 (5 @ 0.01)'
+
+
+def test_partial_fill_large_order(test_order_book):
+    """
+    Tests that a large order is partially filled and the remainder stays active
+    """
+    assert test_order_book.place_order('B1', 'Buy', 100, 10) == 'OK'
+    assert test_order_book.place_order('S1', 'Sell', 100, 4) == 'Fully matched with B1 (4 @ 100)'
+    assert test_order_book.place_order('S2', 'Sell', 100, 3) == 'Fully matched with B1 (3 @ 100)'
+    assert test_order_book.place_order('S3', 'Sell', 100, 5) == 'Partially matched with B1 (3 @ 100)'
+    assert test_order_book.place_order('B2', 'Buy', 100, 2) == 'Fully matched with S3 (2 @ 100)'
+
+
+def test_cancel_partially_filled_order(test_order_book):
+    """
+    Tests canceling an order that was partially matched
+    """
+    assert test_order_book.place_order('B1', 'Buy', 100, 10) == 'OK'
+    assert test_order_book.place_order('S1', 'Sell', 100, 5) == 'Fully matched with B1 (5 @ 100)'
+    assert test_order_book.cancel_order('B1') == 'OK'
+    assert test_order_book.place_order('S2', 'Sell', 100, 5) == 'OK'
+    assert test_order_book.cancel_order('B1') == 'Failed – no such active order'
+
+
+def test_massive_order_book_execution(test_order_book):
+    """
+    Tests performance and correctness with a massive number of orders
+    """
+    for i in range(5000):
+        assert test_order_book.place_order(f'B{i}', 'Buy', 50, 1) == 'OK'
+
+    for i in range(5000):
+        assert test_order_book.place_order(f'S{i}', 'Sell', 50, 1) == f'Fully matched with B{i} (1 @ 50)'
+
+    assert len(test_order_book.filled_orders) == 10000
+    assert len(test_order_book.active_orders) == 0
