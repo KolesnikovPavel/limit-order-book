@@ -21,35 +21,48 @@ Each order includes:
 2. **Best Price / Earliest Time:**
    - For buys, highest price is matched first.
    - For sells, lowest price is matched first.
-   - Among orders at the same price, the earliest one placed is matched first (in practice, Python’s heapq and an internal ordering handle this priority).
+   - Among orders at the same price, the earliest one placed is matched first (FIFO priority is handled via an internal order number).
 
 ## Data Structures and Logic
 
 The main components of the engine:
 
-1. `Order` Class.
-Holds basic attributes: `order_id`, `side`, `price`, `quantity`. It also defines a custom `__lt__` method to ensure correct priority in a heap:
+1. **`Order` Class**  
+Holds basic attributes: `order_id`, `side`, `price`, `quantity` and an internally assigned `order_number` to ensure FIFO processing.  
+It also defines a custom `__lt__` method to ensure correct priority in a heap:
 
-   - For buy orders, higher prices should come out first (max-heap).
-   - For sell orders, lower prices should come out first (min-heap).
+   - For buy orders, higher prices should come out first (max-heap), then earlier order number.
+   - For sell orders, lower prices should come out first (min-heap), then earlier order number.
 
-2. `OrderBook` Class
-
+2. **`OrderBook` Class**  
+Manages active, filled, and canceled orders. It uses two heaps to store buy and sell orders for efficient matching.  
+**Attributes:**
    - `active_orders`: A dictionary mapping order_id → Order for all currently active orders.
-   - `filled_orders`: A set tracking IDs of orders that have been completely filled.
-   - `heap_buy_orders` and `heap_sell_orders`: Two heaps for matching buy and sell orders, respectively.
+   - `filled_orders`: A dictionary tracking orders that have been fully matched.
+   - `canceled_orders`: A dictionary storing canceled orders.
+   - `heap_buy_orders`: A max-heap for buy orders.
+   - `heap_sell_orders`: A min-heap for sell orders.
 
 ### Matching Mechanism
 - **Heap Operations:**
-In Python, `heapq` implements a min-heap. This engine overrides `__lt__` in `Order` to simulate a max-heap for buys and a min-heap for sells.
-- **Loop Until No Match:**
-When a new order arrives, the `_process_order` method repeatedly pops the best opposing order from the opposite heap until prices can no longer match or the new order is fully filled.
+Python's `heapq` (which implements a min-heap) is adapted to prioritize highest buy prices and lowest sell prices.
+- **Processing an Order:**
+When an order arrives, the _`process_order` method repeatedly attempts to match it with the best available opposite order.
+- **Partial and Full Matching:**
+Orders are processed until either:
+  - The incoming order is fully filled.
+  - No more matching orders are available.
 
-### Cancellation Logic
-- **Active vs. Filled:** The engine keeps a dictionary of active orders (`active_orders`) and a set of filled orders (`filled_orders`).
-- **Check `filled_orders`:** If an order is already fully filled, the cancel attempt fails: `"Failed - already fully filled"`.
-- **Check `active_orders`:** If an order isn’t present in active_orders, it’s not eligible for cancellation: `"Failed – no such active order"`.
-- **Otherwise:** Remove it from `active_orders` and return `"OK"`.
+### Order Placement (`place_order`)
+- Ensures that an order ID is unique and validates input.
+- Matches the order against the opposing queue.
+- If unmatched, adds it to the active queue and corresponding heap.
+- Returns a message indicating whether the order was fully matched, partially matched, or simply placed.
+
+### Cancellation Logic (`cancel_order`)
+- If an order is **fully filled**, cancellation fails (`"Failed - already fully filled"`).
+- If an order is **not active**, cancellation fails (`"Failed - no such active order"`).
+- Otherwise, the order is removed from active orders and stored in `canceled_orders`.
 
 ## Installation & Testing
 

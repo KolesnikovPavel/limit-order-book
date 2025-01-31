@@ -35,8 +35,8 @@ class Order:
     def __lt__(self, other):
         """
         Defines ordering for heapq to prioritize:
-        - Buy orders: Higher price first, then earlier timestamp
-        - Sell orders: Lower price first, then earlier timestamp
+        - Buy orders: Higher price first, then earlier order number
+        - Sell orders: Lower price first, then earlier order number
         """
         if self.side == 'buy':
             # higher price first in a buy-heap
