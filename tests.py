@@ -93,7 +93,9 @@ def test_multiple_orders_same_price(test_order_book):
     """
     assert test_order_book.place_order('B1', 'Buy', 100, 5) == 'OK'
     assert test_order_book.place_order('B2', 'Buy', 100, 5) == 'OK'
-    assert test_order_book.place_order('S1', 'Sell', 100, 8) == 'Fully matched with B1 (5 @ 100) and B2 (3 @ 100)'
+    assert test_order_book.place_order('B3', 'Buy', 100, 5) == 'OK'
+    assert test_order_book.place_order('B4', 'Buy', 100, 5) == 'OK'
+    assert test_order_book.place_order('S1', 'Sell', 100, 20) == 'Fully matched with B1 (5 @ 100) and B2 (5 @ 100) and B3 (5 @ 100) and B4 (5 @ 100)'
 
 
 def test_invalid_orders(test_order_book):

@@ -3,18 +3,24 @@ Main module with limit order book implementation.
 """
 
 import heapq
+from itertools import count
+
+# global order number generator
+order_number_generator = count(start=1)
 
 
 class Order:
     """
     Base order class. Represents a single order in order book
     """
-    __slots__ = ('order_id', 'side', 'price', 'quantity')
+    __slots__ = ('order_id', 'side', 'price', 'quantity', 'order_number')
 
     def __init__(self, order_id: str, side: str, price: float, quantity: int):
+        # validate order side
         if side.lower() not in {'buy', 'sell'}:
             raise ValueError(f'Invalid side: {side}. Must be "buy" or "sell"')
 
+        # ensure price and quantity are positive
         if price <= 0 or quantity <= 0:
             raise ValueError('Price and quantity must be positive values')
 
@@ -23,16 +29,20 @@ class Order:
         self.price = price
         self.quantity = quantity
 
+        # automatically assign order number for FIFO processing
+        self.order_number = next(order_number_generator)
+
     def __lt__(self, other):
         """
-        Defines ordering for heapq to prioritize buy orders with higher prices
-        and sell orders with lower prices
+        Defines ordering for heapq to prioritize:
+        - Buy orders: Higher price first, then earlier timestamp
+        - Sell orders: Lower price first, then earlier timestamp
         """
         if self.side == 'buy':
             # higher price first in a buy-heap
-            return self.price > other.price
+            return (self.price, -self.order_number) > (other.price, -other.order_number)
         # lower price first in a sell-heap
-        return self.price < other.price
+        return (self.price, self.order_number) < (other.price, other.order_number)
 
 
 class OrderBook:
@@ -67,6 +77,7 @@ class OrderBook:
         :param quantity: Order quantity
         :return:
         """
+        # prevent placing an order with missing parameters
         if not all([order_id, side, price, quantity]):
             raise ValueError(
                 'Invalid parameters: order_id, side, price and quantity '
@@ -82,8 +93,10 @@ class OrderBook:
         ):
             raise ValueError('Order with this ID has already been placed')
 
+        # create a new order instance
         order = Order(order_id, side, price, quantity)
 
+        # determine order placement based on its side
         if order.side == 'buy':
             current_heap = self.heap_buy_orders
             opposite_heap = self.heap_sell_orders
@@ -93,6 +106,7 @@ class OrderBook:
             opposite_heap = self.heap_buy_orders
             condition = lambda sell_price, buy_price: sell_price <= buy_price
 
+        # try to match the order against opposite orders
         match_items = self._process_order(
             order,
             current_heap,
@@ -100,9 +114,11 @@ class OrderBook:
             condition
         )
 
+        # if no match items, simply confirm order placement
         if not match_items:
             return 'OK'
 
+        # determine if the order was partially or fully matched
         match_type = 'Partially' if order.quantity else 'Fully'
         match_items_str = ' and '.join(match_items)
 
@@ -121,10 +137,11 @@ class OrderBook:
         if order_id not in self.active_orders:
             return 'Failed – no such active order'
 
+        # move order to canceled orders and remove from active orders
         order = self.active_orders[order_id]
         self.canceled_orders[order_id] = order
-
         del self.active_orders[order_id]
+
         return 'OK'
 
     def _process_order(self, order, current_heap, opposite_orders, condition):
@@ -140,7 +157,7 @@ class OrderBook:
         matched_orders = []
 
         while opposite_orders and order.quantity:
-            # get the best opposite order
+            # get the best opposite order (lowest sell price or highest buy price)
             opposite_order = opposite_orders[0]
 
             # ensure the opposite order is still active
@@ -152,19 +169,21 @@ class OrderBook:
             if not condition(order.price, opposite_order.price):
                 break
 
-            # remove after checking condition
+            # remove the matched order from the heap
             heapq.heappop(opposite_orders)
 
+            # calculate the quantity that can be matched
             matched_quantity = min(order.quantity, opposite_order.quantity)
             matched_orders.append(
                 f'{opposite_order.order_id} '
                 f'({matched_quantity} @ {opposite_order.price})'
             )
 
+            # adjust quantities after matching
             order.quantity -= matched_quantity
             opposite_order.quantity -= matched_quantity
 
-            # if partially filled, add back
+            # if partially filled, add back into the heap
             if opposite_order.quantity:
                 heapq.heappush(opposite_orders, opposite_order)
             else:
@@ -179,19 +198,3 @@ class OrderBook:
             self.filled_orders[order.order_id] = order
 
         return matched_orders
-
-
-book1 = OrderBook()
-print(book1.place_order('AAA', 'Buy', 10, 10))  # ok
-print(book1.place_order('BBB', 'Buy', 12, 12))  # ok
-print(book1.place_order('CCC', 'Buy', 14, 14))  # ok
-print(book1.cancel_order('CCC'))  # ok
-print(book1.place_order('DDD', 'Sell', 15, 10))  # ok
-print(book1.place_order('EEE', 'Sell', 12, 2))  # Fully matched with BBB (2 @ 12)
-print(book1.place_order('FFF', 'Sell', 12, 4))  # Fully matched with BBB (4 @ 12)
-print(book1.place_order('GGG', 'Sell', 12, 10))  # Partially matched with BBB (6 @ 12)
-print(book1.cancel_order('BBB'))  # Failed - already fully filled
-print(book1.place_order('HHH', 'Buy', 12, 14))  # Partially matched with GGG (4 @ 12)
-print(book1.place_order('KKK', 'Sell', 10, 20))  # Fully matched with HHH (10 @ 12) and AAA (10 @ 10)
-print(book1.cancel_order('DDD'))  # ok
-print(book1.cancel_order('DDD'))  # Failed – no such active order
